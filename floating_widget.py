@@ -11,6 +11,14 @@ from tkinter import ttk
 import time
 import threading
 import webbrowser
+import os
+import sys
+
+
+def _resource(filename: str) -> str:
+    """Return absolute path to a bundled resource (works from source or exe)."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, filename)
 
 BG       = "#1e1e1e"
 BG2      = "#2a2a2a"
@@ -255,6 +263,10 @@ class FloatingWidget:
         win.configure(bg="#1a1a1a")
         win.resizable(False, False)
         win.attributes("-topmost", True)
+        try:
+            win.iconbitmap(_resource("app.ico"))
+        except Exception:
+            pass
 
         DBG    = "#1a1a1a"
         DSEP   = "#333333"

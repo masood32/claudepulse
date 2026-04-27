@@ -8,6 +8,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('extension', 'extension'),   # browser extension folder
+        ('app.ico', '.'),             # window icon for detail popup
     ],
     hiddenimports=[
         'pystray._win32',
