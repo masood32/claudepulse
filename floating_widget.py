@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import ttk
 import time
 import threading
+import webbrowser
 
 BG       = "#1e1e1e"
 BG2      = "#2a2a2a"
@@ -244,6 +245,121 @@ class FloatingWidget:
         fill_w = max(4, int(pct / 100 * bar_w)) if pct else 2
         canvas.create_rectangle(0, 0, fill_w, 6, fill=color, outline="")
 
+    # ── Details window ───────────────────────────────────────────────────────
+
+    def _show_details_window(self):
+        data = self.get_data()
+
+        win = tk.Toplevel(self.win)
+        win.title("Claude Usage Details")
+        win.configure(bg="#1a1a1a")
+        win.resizable(False, False)
+        win.attributes("-topmost", True)
+
+        DBG    = "#1a1a1a"
+        DSEP   = "#333333"
+        DTRACK = "#3a3a3a"
+        DFILL  = "#4a9eff"
+        DFG    = "#e8e8e8"
+        DDIM   = "#888888"
+        PAD    = 28
+        BAR_W  = 320
+
+        frame = tk.Frame(win, bg=DBG, padx=PAD, pady=20)
+        frame.pack(fill="both", expand=True)
+
+        def _sep():
+            tk.Frame(frame, bg=DSEP, height=1).pack(fill="x", pady=(6, 4))
+
+        def _header(text, badge=None):
+            r = tk.Frame(frame, bg=DBG)
+            r.pack(fill="x", pady=(14, 4))
+            tk.Label(r, text=text, font=("Segoe UI", 13, "bold"),
+                     bg=DBG, fg=DFG).pack(side="left")
+            if badge:
+                tk.Label(r, text=badge, font=("Segoe UI", 10),
+                         bg=DBG, fg=DDIM).pack(side="right")
+
+        def _row(name, sub, pct, label_right):
+            r = tk.Frame(frame, bg=DBG)
+            r.pack(fill="x", pady=5)
+
+            left = tk.Frame(r, bg=DBG, width=175)
+            left.pack(side="left")
+            left.pack_propagate(False)
+            tk.Label(left, text=name, font=("Segoe UI", 10, "bold"),
+                     bg=DBG, fg=DFG, anchor="w").pack(anchor="w")
+            if sub:
+                tk.Label(left, text=sub, font=("Segoe UI", 8),
+                         bg=DBG, fg=DDIM, anchor="w").pack(anchor="w")
+
+            tk.Label(r, text=label_right, font=("Segoe UI", 9),
+                     bg=DBG, fg=DDIM, width=10, anchor="e").pack(side="right")
+
+            bar_frame = tk.Frame(r, bg=DBG)
+            bar_frame.pack(side="left", fill="x", expand=True, padx=(16, 8))
+            c = tk.Canvas(bar_frame, width=BAR_W, height=10,
+                          bg=DTRACK, highlightthickness=0)
+            c.pack(anchor="center", pady=8)
+            fill_w = max(4, int(pct / 100 * BAR_W)) if pct else 2
+            c.create_rectangle(0, 0, fill_w, 10, fill=DFILL, outline="")
+
+        if not data:
+            tk.Label(frame, text="No data available — still loading.",
+                     bg=DBG, fg=DDIM, font=("Segoe UI", 11)).pack(pady=40)
+        else:
+            plan = data.get("plan", "Pro")
+            _header("Plan usage limits", plan)
+            _sep()
+
+            session = data.get("session")
+            if session:
+                sub = f"Resets in {session['resets_in']}" if session.get("resets_in") else ""
+                _row(session["label"], sub, session["used_pct"],
+                     f"{session['used_pct']}% used")
+
+            weekly = data.get("weekly", [])
+            if weekly:
+                _sep()
+                _header("Weekly limits")
+                lnk = tk.Label(frame, text="Learn more about usage limits",
+                               font=("Segoe UI", 8), bg=DBG, fg=DFILL,
+                               cursor="hand2", anchor="w")
+                lnk.pack(anchor="w")
+                lnk.bind("<Button-1>",
+                         lambda e: webbrowser.open("https://claude.ai/settings"))
+                for item in weekly:
+                    sub = f"Resets in {item['resets_in']}" if item.get("resets_in") else ""
+                    _row(item["label"], sub, item["used_pct"],
+                         f"{item['used_pct']}% used")
+
+            if hasattr(self, "_last_update") and self._last_update:
+                age = int(time.time() - self._last_update)
+                ago = ("just now" if age < 10
+                       else f"{age}s ago" if age < 60
+                       else f"{age // 60}m ago")
+                tk.Label(frame, text=f"Last updated: {ago}",
+                         font=("Segoe UI", 8), bg=DBG, fg=DDIM,
+                         anchor="w").pack(anchor="w", pady=(10, 2))
+
+            daily = data.get("daily", [])
+            if daily:
+                _sep()
+                _header("Additional features")
+                for item in daily:
+                    used  = item.get("used", 0)
+                    total = item.get("total", 0)
+                    note  = item.get("note") or ("You haven't used any yet" if used == 0 else "")
+                    right = f"{used} / {total}" if total else f"{item['used_pct']}% used"
+                    _row(item["label"], note, item["used_pct"], right)
+
+        win.update_idletasks()
+        w = win.winfo_reqwidth()
+        h = win.winfo_reqheight()
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        win.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+
     def _rounded_rect(self, canvas, x1, y1, x2, y2, r, **kw):
         canvas.create_arc(x1,    y1,    x1+2*r, y1+2*r, start= 90, extent=90, style="pieslice", **kw)
         canvas.create_arc(x2-2*r,y1,    x2,     y1+2*r, start=  0, extent=90, style="pieslice", **kw)
@@ -305,6 +421,8 @@ class FloatingWidget:
         menu = tk.Menu(self.win, tearoff=0, bg=BG2, fg=FG,
                        activebackground=BG3, activeforeground=FG,
                        font=("Segoe UI", 9))
+        menu.add_command(label="Show Details",
+                         command=self._show_details_window)
         menu.add_command(label="Settings",
                          command=lambda: threading.Thread(
                              target=self.on_settings, daemon=True).start())
