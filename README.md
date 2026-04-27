@@ -6,8 +6,9 @@ A lightweight Windows utility that shows your Claude.ai usage at a glance — al
 
 ## What it does
 
-- **Compact mode** — a thin colored bar sits in the corner of your screen showing your usage %
-- **Expanded mode** — click to see the full breakdown: current session, weekly limits by model, extra credits
+- **Compact mode** — a thin colored bar sits in the corner of your screen showing your current usage %
+- **Expanded mode** — click the bar to see a quick breakdown: session, weekly limits, extra credits
+- **Details window** — right-click → **Show Details** for a full Claude-style usage panel with progress bars
 - **Color coding** — green → yellow → red as usage climbs past configurable thresholds
 - **Auto-fetches data** — reads your session key from browser cookies automatically; no manual setup
 - **Always on top** — draggable to any screen position; position is remembered across restarts
@@ -48,8 +49,19 @@ Done. The app picks up your session key within seconds.
 |---|---|
 | Click the bar | Toggle expanded / compact view |
 | Drag | Move anywhere on screen |
-| Right-click | Settings / Quit menu |
-| System tray icon | Shows current % in tooltip |
+| Right-click → Show Details | Full usage panel matching Claude's UI |
+| Right-click → Settings | Configure thresholds, session key, refresh rate |
+| Right-click → Quit | Exit the app |
+| System tray icon | Shows current % in tooltip; right-click to access menu |
+
+## Details window
+
+Right-click the bar and select **Show Details** to open a dedicated panel that mirrors Claude's own usage page:
+
+- **Plan usage limits** — current session bar with reset timer
+- **Weekly limits** — all-models and per-model bars (Claude Sonnet, Claude Design, etc.)
+- **Additional features** — extra credits, daily routine runs with counts
+- **Last updated** — timestamp of the last successful data fetch
 
 ## Configuration
 
