@@ -295,26 +295,25 @@ class FloatingWidget:
         def _row(name, sub, pct, label_right):
             r = tk.Frame(frame, bg=DBG)
             r.pack(fill="x", pady=5)
+            r.columnconfigure(1, weight=1)
 
-            left = tk.Frame(r, bg=DBG, width=175)
-            left.pack(side="left")
-            left.pack_propagate(False)
-            tk.Label(left, text=name, font=("Segoe UI", 10, "bold"),
-                     bg=DBG, fg=DFG, anchor="w").pack(anchor="w")
+            tk.Label(r, text=name, font=("Segoe UI", 10, "bold"),
+                     bg=DBG, fg=DFG, anchor="w").grid(
+                         row=0, column=0, sticky="w", padx=(0, 20))
             if sub:
-                tk.Label(left, text=sub, font=("Segoe UI", 8),
-                         bg=DBG, fg=DDIM, anchor="w").pack(anchor="w")
+                tk.Label(r, text=sub, font=("Segoe UI", 8),
+                         bg=DBG, fg=DDIM, anchor="w").grid(
+                             row=1, column=0, sticky="w", padx=(0, 20))
 
-            tk.Label(r, text=label_right, font=("Segoe UI", 9),
-                     bg=DBG, fg=DDIM, width=10, anchor="e").pack(side="right")
-
-            bar_frame = tk.Frame(r, bg=DBG)
-            bar_frame.pack(side="left", fill="x", expand=True, padx=(16, 8))
-            c = tk.Canvas(bar_frame, width=BAR_W, height=10,
+            c = tk.Canvas(r, width=BAR_W, height=10,
                           bg=DTRACK, highlightthickness=0)
-            c.pack(anchor="center", pady=8)
+            c.grid(row=0, column=1, rowspan=2, sticky="ew", padx=(0, 16), pady=4)
             fill_w = max(4, int(pct / 100 * BAR_W)) if pct else 2
             c.create_rectangle(0, 0, fill_w, 10, fill=DFILL, outline="")
+
+            tk.Label(r, text=label_right, font=("Segoe UI", 9),
+                     bg=DBG, fg=DDIM, anchor="e").grid(
+                         row=0, column=2, rowspan=2, sticky="e")
 
         if not data:
             tk.Label(frame, text="No data available — still loading.",
