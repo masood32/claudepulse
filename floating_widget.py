@@ -1,0 +1,316 @@
+"""
+Floating always-on-top widget.
+Compact: small pill showing %.
+Click: expands to full usage details.
+Drag: move anywhere on screen.
+Right-click: menu.
+"""
+
+import tkinter as tk
+from tkinter import ttk
+import time
+import threading
+
+BG       = "#1e1e1e"
+BG2      = "#2a2a2a"
+BG3      = "#333333"
+FG       = "#e8e8e8"
+FG_DIM   = "#888888"
+GREEN    = "#3ab56b"
+YELLOW   = "#e6a020"
+RED      = "#e05252"
+BLUE     = "#4a90d9"
+
+BAR_W      = 160   # compact bar width
+BAR_H      = 10    # compact bar height (the thin line)
+EXPANDED_W = 360
+
+
+def _pct_color(pct, warn, crit):
+    if pct >= crit:  return RED
+    if pct >= warn:  return YELLOW
+    return GREEN
+
+
+class FloatingWidget:
+    def __init__(self, get_data_fn, get_config_fn, on_settings_fn, on_quit_fn):
+        self.get_data     = get_data_fn
+        self.get_config   = get_config_fn
+        self.on_settings  = on_settings_fn
+        self.on_quit      = on_quit_fn
+
+        self.expanded   = False
+        self.win        = None
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+        self._win_start_x  = 0
+        self._win_start_y  = 0
+        self._dragging     = False
+        self._pos_x        = None   # remembered position
+        self._pos_y        = None
+
+    # ── Lifecycle ────────────────────────────────────────────────────────────
+
+    def start(self):
+        """Run the widget (blocks — call in main thread or dedicated thread)."""
+        self.win = tk.Tk()
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.attributes("-alpha", 0.96)
+        self.win.configure(bg=BG)
+        self.win.resizable(False, False)
+
+        # Restore saved position, or default to bottom-right
+        self.win.update_idletasks()
+        sw = self.win.winfo_screenwidth()
+        sh = self.win.winfo_screenheight()
+        cfg = self.get_config()
+        self._pos_x = cfg.get("widget_x", sw - BAR_W - 24)
+        self._pos_y = cfg.get("widget_y", sh - BAR_H - 60)
+
+        self._render()
+        self.win.mainloop()
+
+    def refresh(self):
+        """Re-render with fresh data (call from any thread)."""
+        if self.win:
+            self.win.after(0, self._render)
+
+    # ── Rendering ────────────────────────────────────────────────────────────
+
+    def _render(self):
+        for w in self.win.winfo_children():
+            w.destroy()
+
+        if self.expanded:
+            self._build_expanded()
+        else:
+            self._build_compact()
+
+        self.win.update_idletasks()
+        w = self.win.winfo_reqwidth()
+        h = self.win.winfo_reqheight()
+        self.win.geometry(f"{w}x{h}+{self._pos_x}+{self._pos_y}")
+
+    def _build_compact(self):
+        cfg  = self.get_config()
+        data = self.get_data()
+        warn = cfg.get("warning_threshold", 70)
+        crit = cfg.get("critical_threshold", 85)
+
+        pct = 0
+        if data and data.get("session"):
+            pct = data["session"]["used_pct"]
+        elif data and data.get("weekly"):
+            pct = data["weekly"][0]["used_pct"]
+
+        color = _pct_color(pct, warn, crit)
+
+        # Thin rectangular bar
+        canvas = tk.Canvas(self.win, width=BAR_W, height=BAR_H,
+                           bg="#111111", highlightthickness=0)
+        canvas.pack()
+
+        # Track (dark background)
+        canvas.create_rectangle(0, 0, BAR_W, BAR_H, fill="#222222", outline="")
+
+        # Filled portion
+        fill_w = max(2, int(pct / 100 * BAR_W))
+        canvas.create_rectangle(0, 0, fill_w, BAR_H, fill=color, outline="")
+
+        # % label on the right side of the bar
+        canvas.create_text(BAR_W - 3, BAR_H // 2, text=f"{pct}%",
+                           anchor="e", fill=color,
+                           font=("Segoe UI", 7, "bold"))
+
+        self._bind_drag(canvas)
+
+    def _build_expanded(self):
+        cfg  = self.get_config()
+        data = self.get_data()
+        warn = cfg.get("warning_threshold", 70)
+        crit = cfg.get("critical_threshold", 85)
+
+        outer = tk.Frame(self.win, bg=BG, padx=0, pady=0)
+        outer.pack(fill="both", expand=True)
+
+        # ── Title bar ────────────────────────────────────────────────────────
+        title_bar = tk.Frame(outer, bg=BG2, padx=12, pady=8)
+        title_bar.pack(fill="x")
+
+        tk.Label(title_bar, text="Claude Usage", font=("Segoe UI", 11, "bold"),
+                 bg=BG2, fg=FG).pack(side="left")
+
+        if data:
+            plan = data.get("plan", "Pro")
+            tk.Label(title_bar, text=plan, font=("Segoe UI", 9),
+                     bg=BG2, fg=FG_DIM).pack(side="left", padx=8)
+
+        close_btn = tk.Label(title_bar, text="✕", font=("Segoe UI", 10),
+                             bg=BG2, fg=FG_DIM, cursor="hand2")
+        close_btn.pack(side="right")
+        close_btn.bind("<Button-1>", self._on_click)
+
+        self._bind_drag(title_bar)
+        self._bind_drag(close_btn)
+
+        # ── Content ───────────────────────────────────────────────────────────
+        content = tk.Frame(outer, bg=BG, padx=14, pady=10, width=EXPANDED_W)
+        content.pack(fill="x")
+        content.pack_propagate(False)
+
+        if not data:
+            tk.Label(content, text="No data — loading…", bg=BG, fg=FG_DIM,
+                     font=("Segoe UI", 9)).pack(pady=20)
+        else:
+            session = data.get("session")
+            if session:
+                self._section(content, "Current session")
+                self._metric(content, session["label"], session["used_pct"],
+                             session.get("resets_in", ""), warn, crit)
+                self._sep(content)
+
+            weekly = data.get("weekly", [])
+            if weekly:
+                self._section(content, "Weekly limits")
+                for item in weekly:
+                    self._metric(content, item["label"], item["used_pct"],
+                                 item.get("resets_in", ""), warn, crit)
+                self._sep(content)
+
+            daily = data.get("daily", [])
+            if daily:
+                self._section(content, "Additional")
+                for item in daily:
+                    used  = item.get("used", 0)
+                    total = item.get("total", 0)
+                    note  = item.get("note") or (f"{used} / {total}" if total else "")
+                    self._metric(content, item["label"], item["used_pct"],
+                                 note, warn, crit,
+                                 fraction=f"{used} / {total}" if total else None)
+
+        # ── Footer ────────────────────────────────────────────────────────────
+        footer = tk.Frame(outer, bg=BG2, padx=12, pady=6)
+        footer.pack(fill="x")
+
+        if hasattr(self, "_last_update") and self._last_update:
+            age = int(time.time() - self._last_update)
+            ago = f"{age}s ago" if age < 60 else f"{age//60}m ago"
+            tk.Label(footer, text=f"Updated {ago}", bg=BG2, fg=FG_DIM,
+                     font=("Segoe UI", 7)).pack(side="left")
+
+        tk.Label(footer, text="⚙", font=("Segoe UI", 10), bg=BG2, fg=FG_DIM,
+                 cursor="hand2").pack(side="right", padx=4) \
+            .bind("<Button-1>", lambda e: threading.Thread(
+                target=self.on_settings, daemon=True).start())
+
+        self._bind_drag(footer)
+        self._bind_drag(content)
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
+
+    def _section(self, parent, text):
+        tk.Label(parent, text=text, font=("Segoe UI", 9, "bold"),
+                 bg=BG, fg=FG, anchor="w").pack(fill="x", pady=(6, 2))
+
+    def _sep(self, parent):
+        tk.Frame(parent, bg=BG3, height=1).pack(fill="x", pady=4)
+
+    def _metric(self, parent, label, pct, sub, warn, crit, fraction=None):
+        color = _pct_color(pct, warn, crit)
+        row = tk.Frame(parent, bg=BG)
+        row.pack(fill="x", pady=2)
+
+        left = tk.Frame(row, bg=BG, width=130)
+        left.pack(side="left", fill="y")
+        left.pack_propagate(False)
+        tk.Label(left, text=label, font=("Segoe UI", 9),
+                 bg=BG, fg=FG, anchor="w").pack(anchor="w")
+        if sub:
+            tk.Label(left, text=sub, font=("Segoe UI", 7),
+                     bg=BG, fg=FG_DIM, anchor="w").pack(anchor="w")
+
+        right = tk.Frame(row, bg=BG)
+        right.pack(side="right", fill="y")
+
+        pct_text = fraction if fraction else f"{pct}%"
+        tk.Label(right, text=pct_text, font=("Segoe UI", 9, "bold"),
+                 bg=BG, fg=color, width=9, anchor="e").pack(anchor="e")
+
+        bar_w = 190
+        canvas = tk.Canvas(right, width=bar_w, height=6,
+                            bg=BG3, highlightthickness=0)
+        canvas.pack(anchor="e", pady=1)
+        fill_w = max(4, int(pct / 100 * bar_w)) if pct else 2
+        canvas.create_rectangle(0, 0, fill_w, 6, fill=color, outline="")
+
+    def _rounded_rect(self, canvas, x1, y1, x2, y2, r, **kw):
+        canvas.create_arc(x1,    y1,    x1+2*r, y1+2*r, start= 90, extent=90, style="pieslice", **kw)
+        canvas.create_arc(x2-2*r,y1,    x2,     y1+2*r, start=  0, extent=90, style="pieslice", **kw)
+        canvas.create_arc(x1,    y2-2*r,x1+2*r, y2,     start=180, extent=90, style="pieslice", **kw)
+        canvas.create_arc(x2-2*r,y2-2*r,x2,     y2,     start=270, extent=90, style="pieslice", **kw)
+        canvas.create_rectangle(x1+r, y1, x2-r, y2, **kw)
+        canvas.create_rectangle(x1, y1+r, x2, y2-r, **kw)
+
+    # ── Drag ─────────────────────────────────────────────────────────────────
+
+    def _bind_drag(self, widget):
+        widget.bind("<ButtonPress-1>",   self._drag_start)
+        widget.bind("<B1-Motion>",       self._drag_motion)
+        widget.bind("<ButtonRelease-1>", self._drag_end)
+        # Right-click for menu on any draggable surface
+        widget.bind("<Button-3>",        self._show_menu)
+
+    def _drag_start(self, e):
+        self._drag_start_x = e.x_root
+        self._drag_start_y = e.y_root
+        self._win_start_x  = self._pos_x
+        self._win_start_y  = self._pos_y
+        self._dragging     = False
+
+    def _drag_motion(self, e):
+        dx = e.x_root - self._drag_start_x
+        dy = e.y_root - self._drag_start_y
+        if abs(dx) > 3 or abs(dy) > 3:
+            self._dragging = True
+        if self._dragging:
+            self._pos_x = self._win_start_x + dx
+            self._pos_y = self._win_start_y + dy
+            self.win.geometry(f"+{self._pos_x}+{self._pos_y}")
+
+    def _drag_end(self, e):
+        if not self._dragging:
+            # It was a click, not a drag — toggle expand
+            self._toggle()
+        else:
+            # Save final position to config so it persists after restart
+            cfg = self.get_config()
+            cfg["widget_x"] = self._pos_x
+            cfg["widget_y"] = self._pos_y
+            from config import save_config
+            save_config(cfg)
+        self._dragging = False
+
+    # ── Click / Menu ─────────────────────────────────────────────────────────
+
+    def _toggle(self):
+        self.expanded = not self.expanded
+        self._render()
+
+    def _on_click(self, e=None):
+        """Legacy — kept for close button in expanded view."""
+        self._toggle()
+
+    def _show_menu(self, e):
+        menu = tk.Menu(self.win, tearoff=0, bg=BG2, fg=FG,
+                       activebackground=BG3, activeforeground=FG,
+                       font=("Segoe UI", 9))
+        menu.add_command(label="Settings",
+                         command=lambda: threading.Thread(
+                             target=self.on_settings, daemon=True).start())
+        menu.add_separator()
+        menu.add_command(label="Quit", command=self.on_quit)
+        try:
+            menu.tk_popup(e.x_root, e.y_root)
+        finally:
+            menu.grab_release()
