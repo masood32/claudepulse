@@ -2,7 +2,15 @@
 
 A lightweight Windows utility that shows your Claude.ai usage at a glance — always on top, always out of the way.
 
-![ClaudePulse compact bar](app_preview.png)
+## Screenshots
+
+**Compact bar** — sits in the corner of your screen, color-coded by usage:
+
+![ClaudePulse compact bar](screenshots/compact_bar.png)
+
+**Details window** — right-click → Show Details for a full usage panel:
+
+![ClaudePulse details window](screenshots/details_window.png)
 
 ## What it does
 
