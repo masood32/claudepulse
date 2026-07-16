@@ -41,6 +41,63 @@ def _pct_color(pct, warn, crit):
     return GREEN
 
 
+CORNER_MARGIN = 6
+MIN_DIM       = 1
+
+_CORNER_CURSOR = {
+    "nw": "size_nw_se",
+    "se": "size_nw_se",
+    "ne": "size_ne_sw",
+    "sw": "size_ne_sw",
+}
+
+
+def _corner_at(x, y, w, h, margin=CORNER_MARGIN):
+    """Which corner ('nw'/'ne'/'sw'/'se') the point (x, y) is within `margin`
+    px of, inside a (w, h)-sized canvas. None if not near any corner."""
+    near_left   = x <= margin
+    near_right  = x >= w - margin
+    near_top    = y <= margin
+    near_bottom = y >= h - margin
+    if near_top and near_left:
+        return "nw"
+    if near_top and near_right:
+        return "ne"
+    if near_bottom and near_left:
+        return "sw"
+    if near_bottom and near_right:
+        return "se"
+    return None
+
+
+def _resize_dims(corner, sw, sh, swx, swy, dx, dy):
+    """New (width, height, x, y) for dragging `corner` by (dx, dy), starting
+    from bar size (sw, sh) at window position (swx, swy). Clamps each
+    dimension to MIN_DIM while keeping the corner opposite `corner` fixed in
+    place, so the window never drifts once a dimension bottoms out."""
+    if corner == "se":
+        new_w = max(MIN_DIM, sw + dx)
+        new_h = max(MIN_DIM, sh + dy)
+        return new_w, new_h, swx, swy
+    if corner == "ne":
+        new_w = max(MIN_DIM, sw + dx)
+        new_h = max(MIN_DIM, sh - dy)
+        return new_w, new_h, swx, swy + (sh - new_h)
+    if corner == "sw":
+        new_w = max(MIN_DIM, sw - dx)
+        new_h = max(MIN_DIM, sh + dy)
+        return new_w, new_h, swx + (sw - new_w), swy
+    if corner == "nw":
+        new_w = max(MIN_DIM, sw - dx)
+        new_h = max(MIN_DIM, sh - dy)
+        return new_w, new_h, swx + (sw - new_w), swy + (sh - new_h)
+    raise ValueError(f"unknown corner: {corner!r}")
+
+
+def _font_pt_for_height(h):
+    return max(6, round(h * 0.7))
+
+
 class FloatingWidget:
     def __init__(self, get_data_fn, get_config_fn, on_settings_fn, on_quit_fn):
         self.get_data     = get_data_fn
