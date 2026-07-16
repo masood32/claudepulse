@@ -281,10 +281,11 @@ class FloatingWidget:
             tk.Label(footer, text=f"Updated {ago}", bg=BG2, fg=FG_DIM,
                      font=("Segoe UI", 7)).pack(side="left")
 
-        tk.Label(footer, text="⚙", font=("Segoe UI", 10), bg=BG2, fg=FG_DIM,
-                 cursor="hand2").pack(side="right", padx=4) \
-            .bind("<Button-1>", lambda e: threading.Thread(
-                target=self.on_settings, daemon=True).start())
+        gear = tk.Label(footer, text="⚙", font=("Segoe UI", 10), bg=BG2, fg=FG_DIM,
+                        cursor="hand2")
+        gear.pack(side="right", padx=4)
+        gear.bind("<Button-1>", lambda e: threading.Thread(
+            target=self.on_settings, daemon=True).start())
 
         self._bind_drag(footer)
         self._bind_drag(content)

@@ -95,7 +95,7 @@ def _normalize_real(raw: dict) -> dict:
     if extra and extra.get("is_enabled"):
         used = extra.get("used_credits", 0)
         limit = extra.get("monthly_limit", 0)
-        pct = round(extra.get("utilization", 0))
+        pct = round(extra.get("utilization") or 0)
         result["daily"].append({
             "label": "Extra credits",
             "used": round(used),
