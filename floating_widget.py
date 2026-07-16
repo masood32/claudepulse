@@ -115,6 +115,15 @@ class FloatingWidget:
         self._pos_x        = None   # remembered position
         self._pos_y        = None
 
+        # Compact-pill corner resize (never persisted — resets every launch)
+        self._bar_w             = BAR_W
+        self._bar_h             = BAR_H
+        self._compact_canvas    = None
+        self._resizing          = False
+        self._resize_corner     = None
+        self._resize_start_dims = (BAR_W, BAR_H)
+        self._resize_start_pos  = (0, 0)
+
     # ── Lifecycle ────────────────────────────────────────────────────────────
 
     def start(self):
@@ -159,6 +168,16 @@ class FloatingWidget:
         self.win.geometry(f"{w}x{h}+{self._pos_x}+{self._pos_y}")
 
     def _build_compact(self):
+        canvas = tk.Canvas(self.win, bg="#111111", highlightthickness=0)
+        canvas.pack()
+        self._compact_canvas = canvas
+        self._draw_compact_canvas(canvas)
+        self._bind_resizable_drag(canvas)
+
+    def _draw_compact_canvas(self, canvas):
+        """(Re)draw the compact bar at its current self._bar_w/self._bar_h.
+        Resizes the existing canvas in place rather than recreating it, so
+        this is safe to call mid-drag without losing event bindings."""
         cfg  = self.get_config()
         data = self.get_data()
         warn = cfg.get("warning_threshold", 70)
@@ -171,25 +190,22 @@ class FloatingWidget:
             pct = data["weekly"][0]["used_pct"]
 
         color = _pct_color(pct, warn, crit)
+        w, h = self._bar_w, self._bar_h
 
-        # Thin rectangular bar
-        canvas = tk.Canvas(self.win, width=BAR_W, height=BAR_H,
-                           bg="#111111", highlightthickness=0)
-        canvas.pack()
+        canvas.configure(width=w, height=h)
+        canvas.delete("all")
 
         # Track (dark background)
-        canvas.create_rectangle(0, 0, BAR_W, BAR_H, fill="#222222", outline="")
+        canvas.create_rectangle(0, 0, w, h, fill="#222222", outline="")
 
         # Filled portion
-        fill_w = max(2, int(pct / 100 * BAR_W))
-        canvas.create_rectangle(0, 0, fill_w, BAR_H, fill=color, outline="")
+        fill_w = max(2, int(pct / 100 * w))
+        canvas.create_rectangle(0, 0, fill_w, h, fill=color, outline="")
 
         # % label on the right side of the bar
-        canvas.create_text(BAR_W - 3, BAR_H // 2, text=f"{pct}%",
+        canvas.create_text(w - 3, h // 2, text=f"{pct}%",
                            anchor="e", fill=color,
-                           font=("Segoe UI", 7, "bold"))
-
-        self._bind_drag(canvas)
+                           font=("Segoe UI", _font_pt_for_height(h), "bold"))
 
     def _build_expanded(self):
         cfg  = self.get_config()
@@ -437,6 +453,68 @@ class FloatingWidget:
         canvas.create_rectangle(x1, y1+r, x2, y2-r, **kw)
 
     # ── Drag ─────────────────────────────────────────────────────────────────
+
+    def _bind_resizable_drag(self, canvas):
+        """Like _bind_drag, but corner zones resize the compact bar instead
+        of moving the window. Used only by the compact canvas."""
+        canvas.bind("<Motion>",          self._compact_motion)
+        canvas.bind("<ButtonPress-1>",   self._compact_press)
+        canvas.bind("<B1-Motion>",       self._compact_drag)
+        canvas.bind("<ButtonRelease-1>", self._compact_release)
+        canvas.bind("<Button-3>",        self._show_menu)
+
+    def _compact_motion(self, e):
+        corner = _corner_at(e.x, e.y, self._bar_w, self._bar_h)
+        e.widget.configure(cursor=_CORNER_CURSOR.get(corner, ""))
+
+    def _compact_press(self, e):
+        self._drag_start_x = e.x_root
+        self._drag_start_y = e.y_root
+        self._win_start_x  = self._pos_x
+        self._win_start_y  = self._pos_y
+        self._dragging      = False
+
+        corner = _corner_at(e.x, e.y, self._bar_w, self._bar_h)
+        self._resize_corner = corner
+        self._resizing       = corner is not None
+        if self._resizing:
+            self._resize_start_dims = (self._bar_w, self._bar_h)
+            self._resize_start_pos  = (self._pos_x, self._pos_y)
+
+    def _compact_drag(self, e):
+        dx = e.x_root - self._drag_start_x
+        dy = e.y_root - self._drag_start_y
+        if abs(dx) > 3 or abs(dy) > 3:
+            self._dragging = True
+        if not self._dragging:
+            return
+
+        if self._resizing:
+            sw, sh = self._resize_start_dims
+            swx, swy = self._resize_start_pos
+            self._bar_w, self._bar_h, self._pos_x, self._pos_y = _resize_dims(
+                self._resize_corner, sw, sh, swx, swy, dx, dy)
+            self._draw_compact_canvas(self._compact_canvas)
+            self.win.geometry(
+                f"{self._bar_w}x{self._bar_h}+{self._pos_x}+{self._pos_y}")
+        else:
+            self._pos_x = self._win_start_x + dx
+            self._pos_y = self._win_start_y + dy
+            self.win.geometry(f"+{self._pos_x}+{self._pos_y}")
+
+    def _compact_release(self, e):
+        if not self._dragging:
+            self._toggle()
+        elif not self._resizing:
+            # Moved (not resized) — persist position, same as before.
+            cfg = self.get_config()
+            cfg["widget_x"] = self._pos_x
+            cfg["widget_y"] = self._pos_y
+            from config import save_config
+            save_config(cfg)
+        self._dragging = False
+        self._resizing  = False
+        self._resize_corner = None
 
     def _bind_drag(self, widget):
         widget.bind("<ButtonPress-1>",   self._drag_start)
