@@ -101,7 +101,7 @@ def _normalize_real(raw: dict) -> dict:
             "used": round(used),
             "total": limit,
             "used_pct": pct,
-            "note": f"${used:.0f} / ${limit} used this month",
+            "note": f"${used:.0f} / ${limit:.0f} used this month",
         })
 
     return result

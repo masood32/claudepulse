@@ -57,11 +57,12 @@ def _read_chromium_cookies(profile_dir: str, local_state_path: str) -> list[tupl
 
     key = _get_chromium_key(local_state_path)
 
-    tmp = tempfile.mktemp(suffix=".db")
+    tmp_fd, tmp = tempfile.mkstemp(suffix=".db")
+    os.close(tmp_fd)
     try:
         shutil.copy2(db_path, tmp)
-    except PermissionError:
-        return []  # Browser is running with exclusive lock
+    except OSError:
+        return []  # Browser is running with exclusive lock, or file vanished mid-read
 
     results = []
     try:
@@ -137,11 +138,12 @@ def _firefox_profiles() -> list[tuple[str, str]]:
 
 
 def _read_firefox_cookie(db_path: str) -> str | None:
-    tmp = tempfile.mktemp(suffix=".db")
+    tmp_fd, tmp = tempfile.mkstemp(suffix=".db")
+    os.close(tmp_fd)
     try:
         shutil.copy2(db_path, tmp)
-    except PermissionError:
-        # Try immutable open while Firefox is running
+    except OSError:
+        # Try immutable open while Firefox is running, or file vanished mid-read
         try:
             conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
         except Exception:

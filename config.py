@@ -14,8 +14,11 @@ DEFAULTS = {
 
 def load_config():
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH) as f:
-            data = json.load(f)
+        try:
+            with open(CONFIG_PATH) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return DEFAULTS.copy()
         for k, v in DEFAULTS.items():
             data.setdefault(k, v)
         return data
@@ -23,5 +26,7 @@ def load_config():
 
 
 def save_config(cfg):
-    with open(CONFIG_PATH, "w") as f:
+    tmp_path = CONFIG_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(cfg, f, indent=2)
+    os.replace(tmp_path, CONFIG_PATH)

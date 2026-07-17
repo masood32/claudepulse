@@ -18,7 +18,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self._cors()
         self.end_headers()
 
     def do_POST(self):
@@ -51,16 +50,10 @@ class _Handler(BaseHTTPRequestHandler):
     def _reply(self, code, text):
         data = text.encode()
         self.send_response(code)
-        self._cors()
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
-
-    def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
 
 def start(on_data_received):

@@ -9,16 +9,32 @@ Right-click: menu.
 import tkinter as tk
 from tkinter import ttk
 import time
-import threading
 import webbrowser
 import os
 import sys
+import ctypes
+from ctypes import wintypes
 
 
 def _resource(filename: str) -> str:
     """Return absolute path to a bundled resource (works from source or exe)."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, filename)
+
+
+def _point_on_any_monitor(x: int, y: int) -> bool:
+    """True if (x, y) falls within a currently connected monitor's bounds.
+
+    A saved widget position can point at a monitor that's since been
+    unplugged (or that a window was dragged onto and is no longer attached),
+    leaving the widget parked in empty virtual-desktop space — invisible and
+    unreachable.
+    """
+    monitor_from_point = ctypes.windll.user32.MonitorFromPoint
+    monitor_from_point.argtypes = [wintypes.POINT, wintypes.DWORD]
+    monitor_from_point.restype = wintypes.HANDLE
+    MONITOR_DEFAULTTONULL = 0
+    return bool(monitor_from_point(wintypes.POINT(int(x), int(y)), MONITOR_DEFAULTTONULL))
 
 BG       = "#1e1e1e"
 BG2      = "#2a2a2a"
@@ -165,6 +181,9 @@ class FloatingWidget:
         self.win.update_idletasks()
         w = self.win.winfo_reqwidth()
         h = self.win.winfo_reqheight()
+        if not _point_on_any_monitor(self._pos_x, self._pos_y):
+            self._pos_x = self.win.winfo_screenwidth() - w - 24
+            self._pos_y = self.win.winfo_screenheight() - h - 60
         self.win.geometry(f"{w}x{h}+{self._pos_x}+{self._pos_y}")
 
     def _build_compact(self):
@@ -284,8 +303,7 @@ class FloatingWidget:
         gear = tk.Label(footer, text="⚙", font=("Segoe UI", 10), bg=BG2, fg=FG_DIM,
                         cursor="hand2")
         gear.pack(side="right", padx=4)
-        gear.bind("<Button-1>", lambda e: threading.Thread(
-            target=self.on_settings, daemon=True).start())
+        gear.bind("<Button-1>", lambda e: self.on_settings())
 
         self._bind_drag(footer)
         self._bind_drag(content)
@@ -570,9 +588,7 @@ class FloatingWidget:
                        font=("Segoe UI", 9))
         menu.add_command(label="Show Details",
                          command=self._show_details_window)
-        menu.add_command(label="Settings",
-                         command=lambda: threading.Thread(
-                             target=self.on_settings, daemon=True).start())
+        menu.add_command(label="Settings", command=self.on_settings)
         menu.add_separator()
         menu.add_command(label="Quit", command=self.on_quit)
         try:

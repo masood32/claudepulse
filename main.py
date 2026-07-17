@@ -148,11 +148,12 @@ class ClaudeUsageTracker:
     # ── Settings / quit ──────────────────────────────────────────────────────
 
     def _open_settings(self, icon=None, item=None):
-        threading.Thread(target=self._settings_thread, daemon=True).start()
+        if self._widget and self._widget.win:
+            self._widget.win.after(0, self._open_settings_dialog)
 
-    def _settings_thread(self):
+    def _open_settings_dialog(self):
         from settings_dialog import show_settings
-        show_settings(self.config, parent=None)
+        show_settings(self.config, parent=self._widget.win if self._widget else None)
         self.config = load_config()
         self._do_refresh()
 
@@ -188,7 +189,7 @@ class ClaudeUsageTracker:
         self._widget = FloatingWidget(
             get_data_fn    = lambda: self.usage_data,
             get_config_fn  = lambda: self.config,
-            on_settings_fn = self._settings_thread,
+            on_settings_fn = self._open_settings_dialog,
             on_quit_fn     = self._quit,
         )
         self._widget.start()   # blocks
